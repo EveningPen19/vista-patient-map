@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Vista Patient Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --blue: #185FA5; --green: #3B6D11; --amber: #BA7517; --pink: #993556;
+    --bg: #f7f6f3; --surface: #ffffff; --border: rgba(0,0,0,0.1);
+    --text: #1a1a1a; --text-muted: #666; --text-faint: #999;
+    --radius: 8px; --radius-lg: 12px;
+  }
+  html, body { height: 100%; font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  #toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 10;
+  }
+  .logo { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.3px; margin-right: 4px; }
+  .logo span { color: var(--blue); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 13px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font-size: 13px; font-family: inherit;
+    cursor: pointer; font-weight: 500; transition: background 0.12s;
+  }
+  .btn:hover { background: #f0efe9; }
+  .btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .btn.primary:hover { background: #0C447C; }
+  .btn.danger-soft { color: #c00; border-color: #fcc; background: #fff8f8; }
+  .btn.danger-soft:hover { background: #ffeeee; }
+  .mode-wrap { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .mode-btn {
+    padding: 5px 12px; font-size: 12px; font-family: inherit;
+    border: none; background: var(--surface); color: var(--text-muted);
+    cursor: pointer; font-weight: 500; transition: background 0.12s, color 0.12s;
+  }
+  .mode-btn + .mode-btn { border-left: 1px solid var(--border); }
+  .mode-btn.on { background: var(--blue); color: #fff; }
+  .legend { display: flex; gap: 12px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+  .leg { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
+  .leg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #map { flex: 1; z-index: 1; }
+  #panel {
+    width: 280px; flex-shrink: 0; display: flex; flex-direction: column;
+    background: var(--surface); border-left: 1px solid var(--border); z-index: 2; overflow: hidden;
+  }
+  #panel-top {
+    padding: 10px 12px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+  }
+  .panel-label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  #filt {
+    font-size: 12px; padding: 4px 8px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--bg);
+    color: var(--text); font-family: inherit; cursor: pointer;
+  }
+  #pt-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+  #pt-list::-webkit-scrollbar { width: 4px; }
+  #pt-list::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+  .ptc {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 9px 11px; cursor: pointer; background: var(--surface); transition: background 0.1s;
+  }
+  .ptc:hover { background: var(--bg); }
+  .ptc.inroute { border-color: var(--green); background: #f0f7e8; }
+  .pt-name { font-size: 13px; font-weight: 500; color: var(--text); display: flex; align-items: center; gap: 6px; }
+  .pt-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .pt-addr { font-size: 11px; color: var(--text-muted); margin-top: 2px; padding-left: 14px; }
+  .pt-pref { font-size: 11px; color: var(--text-faint); margin-top: 5px; font-style: italic; border-top: 1px solid var(--border); padding-top: 5px; line-height: 1.5; }
+  .route-badge { margin-left: auto; font-size: 10px; background: #e0f0d0; color: var(--green); padding: 1px 6px; border-radius: 10px; font-weight: 600; }
+  #route-box { padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; display: none; }
+  #route-box h4 { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 7px; }
+  .rs { display: flex; align-items: center; gap: 7px; padding: 5px 7px; border-radius: var(--radius); background: var(--bg); margin-bottom: 3px; }
+  .rn { width: 18px; height: 18px; border-radius: 50%; background: var(--green); color: white; font-size: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-weight: 600; }
+  .rs-name { flex: 1; font-size: 12px; color: var(--text); }
+  .rx { background: none; border: none; color: #ccc; cursor: pointer; font-size: 16px; padding: 0 2px; line-height: 1; transition: color 0.1s; }
+  .rx:hover { color: #c00; }
+  .empty-state { padding: 32px 16px; text-align: center; color: var(--text-faint); font-size: 13px; line-height: 1.7; }
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+    z-index: 1000; display: none; align-items: center; justify-content: center;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: var(--radius-lg);
+    padding: 22px; width: 380px; max-width: 95vw;
+    border: 1px solid var(--border); box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  }
+  .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+  .fg { margin-bottom: 12px; }
+  .fg label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 4px; }
+  .fg input, .fg select, .fg textarea {
+    width: 100%; font-size: 13px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg); color: var(--text); font-family: inherit;
+  }
+  .fg input:focus, .fg select:focus, .fg textarea:focus {
+    outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(24,95,165,0.1);
+  }
+  .fg textarea { height: 80px; resize: vertical; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .leaflet-popup-content-wrapper { border-radius: 12px !important; font-family: 'DM Sans', sans-serif !important; }
+  .leaflet-popup-content { margin: 12px 14px !important; min-width: 170px; }
+  .pop-name { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 3px; }
+  .pop-addr { font-size: 12px; color: #666; margin-bottom: 6px; line-height: 1.4; }
+  .pop-region { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 10px; display: inline-block; margin-bottom: 6px; }
+  .pop-pref { font-size: 11px; color: #666; font-style: italic; border-top: 1px solid #eee; padding-top: 6px; margin-top: 4px; line-height: 1.5; }
+  .pop-btns { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap; }
+  .pop-btn { font-size: 11px; padding: 4px 9px; border-radius: 6px; border: 1px solid #ddd; background: #fff; cursor: pointer; color: #333; font-family: 'DM Sans', sans-serif; font-weight: 500; }
+  .pop-btn:hover { background: #f5f5f5; }
+  .pop-btn.danger { color: #c00; border-color: #fcc; }
+  .pop-btn.route-add { color: #185FA5; border-color: #b5d4f4; }
+  #route-hint {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.68); color: #fff; font-size: 12px;
+    padding: 6px 14px; border-radius: 20px; pointer-events: none;
+    z-index: 500; display: none; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <div class="logo">Vista <span>Patient Map</span></div>
+    <button class="btn primary" onclick="openModal()">+ Add patient</button>
+    <div class="mode-wrap">
+      <button class="mode-btn on" id="btn-view" onclick="setMode('view')">View</button>
+      <button class="mode-btn" id="btn-route" onclick="setMode('route')">Plan route</button>
+    </div>
+    <button class="btn danger-soft" id="clr-btn" onclick="clearRoute()" style="display:none;">Clear route</button>
+    <div class="legend">
+      <div class="leg"><div class="leg-dot" style="background:#185FA5"></div>Central</div>
+      <div class="leg"><div class="leg-dot" style="background:#3B6D11"></div>West</div>
+      <div class="leg"><div class="leg-dot" style="background:#BA7517"></div>East</div>
+      <div class="leg"><div class="leg-dot" style="background:#993556"></div>North</div>
+    </div>
+  </div>
+  <div id="main">
+    <div id="map">
+      <div id="route-hint">Click a pin or use the popup to add to route</div>
+    </div>
+    <div id="panel">
+      <div id="panel-top">
+        <span class="panel-label">Patients (<span id="pt-count">0</span>)</span>
+        <select id="filt" onchange="renderList()">
+          <option value="">All regions</option>
+          <option value="Central Denver">Central</option>
+          <option value="West">West</option>
+          <option value="East">East</option>
+          <option value="North">North</option>
+        </select>
+      </div>
+      <div id="pt-list"></div>
+      <div id="route-box">
+        <h4>Today's route</h4>
+        <div id="route-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+    <h3 id="mtitle">Add patient</h3>
+    <div class="fg"><label>Name</label><input type="text" id="f-name" placeholder="Patient name"/></div>
+    <div class="fg"><label>Address</label><input type="text" id="f-addr" placeholder="e.g. 1234 Colfax Ave, Denver CO"/></div>
+    <div class="fg">
+      <label>Region</label>
+      <select id="f-region">
+        <option value="Central Denver">Central Denver</option>
+        <option value="West">West — Lakewood, Wheat Ridge, Arvada, Golden</option>
+        <option value="East">East — Aurora, Green Valley Ranch</option>
+        <option value="North">North — Commerce City, Thornton, Westminster</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Scheduling preferences</label>
+      <textarea id="f-prefs" placeholder="e.g. Prefers Wed afternoons, flexible otherwise. No before 10am. Dialysis Tue/Thu."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="save-btn" onclick="savePatient()">Add patient</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script>
+const RC = { 'Central Denver':'#185FA5', 'West':'#3B6D11', 'East':'#BA7517', 'North':'#993556' };
+const REGION_COORDS = {
+  'Central Denver': [39.7392, -104.9903],
+  'West':           [39.7447, -105.0820],
+  'East':           [39.7294, -104.8319],
+  'North':          [39.8680, -104.9719]
+};
+
+let patients = [], route = [], mode = 'view', editId = null;
+let map, markers = {}, routeLines = [];
+
+function load() {
+  try { patients = JSON.parse(localStorage.getItem('vista_pts_v5') || '[]'); } catch(e) { patients = []; }
+}
+function save() {
+  try { localStorage.setItem('vista_pts_v5', JSON.stringify(patients)); } catch(e) {}
+}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+
+function getCoords(p) {
+  if (p._lat && p._lng) return [p._lat, p._lng];
+  const base = REGION_COORDS[p.region] || REGION_COORDS['Central Denver'];
+  p._lat = base[0] + (Math.random() - 0.5) * 0.06;
+  p._lng = base[1] + (Math.random() - 0.5) * 0.09;
+  return [p._lat, p._lng];
+}
+
+function makeIcon(p, routeNum) {
+  const color = RC[p.region] || '#888';
+  const fill = routeNum ? '#3B6D11' : color;
+  const initials = p.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const label = routeNum ? routeNum : initials;
+  const size = 30;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${fill};border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:white;font-family:'DM Sans',sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.3);cursor:pointer;">${label}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size/2, size/2],
+    popupAnchor: [0, -(size/2 + 4)]
+  });
+}
+
+function popupHtml(p) {
+  const color = RC[p.region] || '#888';
+  const ri = route.indexOf(p.id);
+  return `<div class="pop-name">${p.name}</div>
+    <div class="pop-addr">${p.address}</div>
+    <span class="pop-region" style="background:${color}25;color:${color};">${p.region}</span>
+    ${p.prefs ? `<div class="pop-pref">${p.prefs}</div>` : ''}
+    <div class="pop-btns">
+      <button class="pop-btn" onclick="openModal('${p.id}')">Edit</button>
+      <button class="pop-btn danger" onclick="deletePatient('${p.id}')">Delete</button>
+      ${mode === 'route' && ri < 0 ? `<button class="pop-btn route-add" onclick="addToRoute('${p.id}')">+ Add to route</button>` : ''}
+    </div>`;
+}
+
+function renderMap() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+  routeLines.forEach(l => map.removeLayer(l));
+  routeLines = [];
+
+  if (route.length > 1) {
+    for (let i = 0; i < route.length - 1; i++) {
+      const a = patients.find(p => p.id === route[i]);
+      const b = patients.find(p => p.id === route[i+1]);
+      if (a && b) {
+        const line = L.polyline([getCoords(a), getCoords(b)], {
+          color: '#3B6D11', weight: 2.5, dashArray: '6 4', opacity: 0.65
+        }).addTo(map);
+        routeLines.push(line);
+      }
+    }
+  }
+
+  patients.forEach(p => {
+    const coords = getCoords(p);
+    const ri = route.indexOf(p.id);
+    const icon = makeIcon(p, ri >= 0 ? ri + 1 : null);
+    const marker = L.marker(coords, { icon }).addTo(map);
+    marker.bindPopup(popupHtml(p), { maxWidth: 260, minWidth: 200 });
+    markers[p.id] = marker;
+  });
+}
+
+function renderList() {
+  const filt = document.getElementById('filt').value;
+  const pts = filt ? patients.filter(p => p.region === filt) : patients;
+  document.getElementById('pt-count').textContent = patients.length;
+  const list = document.getElementById('pt-list');
+  if (pts.length === 0) {
+    list.innerHTML = `<div class="empty-state">${patients.length === 0 ? 'No patients yet.<br>Click <strong>+ Add patient</strong> to get started.' : 'No patients in this region.'}</div>`;
+    return;
+  }
+  list.innerHTML = pts.map(p => {
+    const ri = route.indexOf(p.id);
+    const color = RC[p.region] || '#888';
+    return `<div class="ptc ${ri >= 0 ? 'inroute' : ''}" onclick="focusPatient('${p.id}')">
+      <div class="pt-name">
+        <span class="pt-dot" style="background:${color};"></span>
+        ${p.name}
+        ${ri >= 0 ? `<span class="route-badge">#${ri+1}</span>` : ''}
+      </div>
+      <div class="pt-addr">${p.address}</div>
+      ${p.prefs ? `<div class="pt-pref">${p.prefs.length > 80 ? p.prefs.slice(0,80)+'…' : p.prefs}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const rb = document.getElementById('route-box');
+  const rl = document.getElementById('route-list');
+  if (route.length > 0) {
+    rb.style.display = 'block';
+    rl.innerHTML = route.map((id, i) => {
+      const p = patients.find(q => q.id === id);
+      if (!p) return '';
+      return `<div class="rs"><div class="rn">${i+1}</div><span class="rs-name">${p.name}</span><button class="rx" onclick="removeRoute('${id}',event)">×</button></div>`;
+    }).join('');
+  } else {
+    rb.style.display = 'none';
+  }
+}
+
+function focusPatient(id) {
+  const p = patients.find(q => q.id === id);
+  if (!p) return;
+  map.setView(getCoords(p), 14, { animate: true });
+  if (markers[id]) markers[id].openPopup();
+}
+
+function addToRoute(id) {
+  if (!route.includes(id)) { route.push(id); renderMap(); renderList(); }
+}
+
+function removeRoute(id, e) {
+  if (e) e.stopPropagation();
+  route = route.filter(r => r !== id);
+  renderMap(); renderList();
+}
+
+function clearRoute() { route = []; renderMap(); renderList(); }
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-view').className = 'mode-btn' + (m === 'view' ? ' on' : '');
+  document.getElementById('btn-route').className = 'mode-btn' + (m === 'route' ? ' on' : '');
+  document.getElementById('clr-btn').style.display = m === 'route' ? 'inline-flex' : 'none';
+  document.getElementById('route-hint').style.display = m === 'route' ? 'block' : 'none';
+  Object.entries(markers).forEach(([id, mk]) => {
+    const p = patients.find(q => q.id === id);
+    if (p) mk.setPopupContent(popupHtml(p));
+  });
+  renderList();
+}
+
+function openModal(id) {
+  map.closePopup();
+  editId = id || null;
+  document.getElementById('mtitle').textContent = id ? 'Edit patient' : 'Add patient';
+  document.getElementById('save-btn').textContent = id ? 'Save changes' : 'Add patient';
+  if (id) {
+    const p = patients.find(q => q.id === id);
+    document.getElementById('f-name').value = p.name;
+    document.getElementById('f-addr').value = p.address;
+    document.getElementById('f-region').value = p.region;
+    document.getElementById('f-prefs').value = p.prefs || '';
+  } else {
+    document.getElementById('f-name').value = '';
+    document.getElementById('f-addr').value = '';
+    document.getElementById('f-region').value = 'Central Denver';
+    document.getElementById('f-prefs').value = '';
+  }
+  document.getElementById('modal-bg').className = 'modal-bg open';
+  setTimeout(() => document.getElementById('f-name').focus(), 80);
+}
+
+function closeModal() { document.getElementById('modal-bg').className = 'modal-bg'; editId = null; }
+
+function savePatient() {
+  const name = document.getElementById('f-name').value.trim();
+  const addr = document.getElementById('f-addr').value.trim();
+  const region = document.getElementById('f-region').value;
+  const prefs = document.getElementById('f-prefs').value.trim();
+  if (!name || !addr) { alert('Name and address are required.'); return; }
+  if (editId) {
+    const p = patients.find(q => q.id === editId);
+    if (p.region !== region) { delete p._lat; delete p._lng; }
+    p.name = name; p.address = addr; p.region = region; p.prefs = prefs;
+    if (!p._lat) getCoords(p);
+  } else {
+    const p = { id: uid(), name, address: addr, region, prefs };
+    getCoords(p);
+    patients.push(p);
+  }
+  save(); closeModal(); renderMap(); renderList();
+}
+
+function deletePatient(id) {
+  if (!confirm('Remove this patient?')) return;
+  patients = patients.filter(p => p.id !== id);
+  route = route.filter(r => r !== id);
+  map.closePopup();
+  save(); renderMap(); renderList();
+}
+
+document.getElementById('modal-bg').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// Init map after DOM + Leaflet are both ready
+load();
+patients.forEach(p => { if (!p._lat) getCoords(p); });
+map = L.map('map', { center: [39.77, -104.97], zoom: 11 });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+  maxZoom: 19
+}).addTo(map);
+renderMap();
+renderList();
+</script>
+</body>
+</html>
